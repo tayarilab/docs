@@ -13,7 +13,7 @@ The **engine** is a small web app that serves a **medical quiz** (Cardiovascular
 | **public/index.html** | Quiz UI: fetches `/api/questions`, renders 5 questions, submits answers, shows score and correct/wrong. |
 | **quiz_llm/** | Optional package: downloads a small GGUF model (e.g. SmolLM2-360M) from Hugging Face and generates questions without Ollama. Used when Ollama is unavailable or when `USE_EMBEDDED_LLM=1`. |
 | **.quiz_pool.json** | Cache file (under `engine/`). Stores up to 20 LLM-generated questions; each request picks a random 5 from this pool. Created/updated when the pool is empty or too small. |
-| **.quiz_models/** | Optional. When using embedded LLM with project cache, the downloaded GGUF model is stored here (or under `QUIZ_LLM_CACHE`). |
+| **.quiz_models/** | Embedded LLM model cache. In **production Docker**, the model is downloaded at **build time** and baked into the image; `USE_EMBEDDED_LLM=1` and `QUIZ_LLM_CACHE=/app/.quiz_models` so the app generates questions without Ollama. |
 
 ## Deployment modes
 
@@ -22,6 +22,16 @@ The **engine** is a small web app that serves a **medical quiz** (Cardiovascular
 | **Ollama** | Default when the server starts (unless `USE_EMBEDDED_LLM=1`). Server calls `OLLAMA_HOST` (default `http://localhost:11434`) with `OLLAMA_QUIZ_MODEL` (default `llama3.2`). | Ollama installed and running; model pulled (e.g. `ollama run llama3.2`). |
 | **Embedded (quiz_llm)** | When Ollama fails or when `USE_EMBEDDED_LLM=1`. Uses `llama-cpp-python` and a GGUF model (e.g. SmolLM2-360M) downloaded from Hugging Face. | `pip install -r requirements-llm.txt`; on Windows, a pre-built wheel or build tools may be needed. |
 | **Error** | When `cvs.json` is missing or has no `full_text`, or when the LLM returns fewer than 5 questions. | Fix chapter file or ensure Ollama/embedded LLM is available and working. |
+
+## Port and API routes (unified)
+
+- **Port:** **9104** everywhere (local and deployment). Override with env `PORT`.
+- **Host:** Local default `127.0.0.1`; in deployment set `HOST=0.0.0.0` (or set `DEPLOY=1`).
+- **Routes:**
+  - `GET /` – Quiz UI (`index.html`).
+  - `GET /health` – Health check (returns `{"status":"ok","port":9104}`). Used by Docker and load balancers.
+  - `GET /api/questions` – Returns 5 random questions (JSON). 404 if chapter missing; 503 if pool too small.
+  - `GET /api/status` – Deployment debug: paths, `cvs_ok`, `pool_count`, port (no secrets).
 
 ## Key constants (quiz_server.py)
 
@@ -33,6 +43,9 @@ The **engine** is a small web app that serves a **medical quiz** (Cardiovascular
 
 | Variable | Default | Effect |
 |----------|---------|--------|
+| `PORT` | `9104` | Server port (local and deployment). |
+| `HOST` | `127.0.0.1` (or `0.0.0.0` if `DEPLOY=1`) | Bind address. |
+| `DEPLOY` | (unset) | If set, default HOST is `0.0.0.0`. |
 | `OLLAMA_HOST` | `http://localhost:11434` | Base URL of the Ollama API. |
 | `OLLAMA_QUIZ_MODEL` | `llama3.2` | Model name used for generation. |
 | `USE_EMBEDDED_LLM` | (unset) | If `1`, `true`, or `yes`, use only the embedded model (no Ollama). |
